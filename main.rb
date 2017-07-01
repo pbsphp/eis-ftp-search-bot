@@ -15,8 +15,6 @@ $config = {
   pass: 'free',
 
   max_messages_limit: 100,
-
-  tg_token: 'SECRET',
 }
 
 
@@ -257,7 +255,17 @@ class XmlRunner
 end
 
 
-Telegram::Bot::Client.run($config[:tg_token]) do |bot|
+token_path =  File.join(File.dirname(__FILE__), '.token')
+unless File.exists?(token_path)
+  abort(
+    "fatal: Token file is missing!\n" +
+    "Put `.token' with telegram bot token into project root."
+  )
+end
+tg_token = File.read(token_path).strip
+
+
+Telegram::Bot::Client.run(tg_token) do |bot|
   bot.listen do |message|
     case message.text
     when '/start'
