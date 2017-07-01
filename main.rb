@@ -11,8 +11,11 @@ require 'stringio'
 # Настройки
 $config = {
   host: 'ftp.zakupki.gov.ru',
-  user: 'free',
-  pass: 'free',
+  logpasses: [{
+    prefix: /^\/out\//, user: 'fz223free', pass: 'fz223free',
+  }, {
+    prefix: /.*/, user: 'free', pass: 'free',
+  }],
 
   max_messages_limit: 100,
 }
@@ -147,8 +150,7 @@ class FtpRunner
 
   def initialize(params)
     @host = params[:host]
-    @user = params[:user]
-    @pass = params[:pass]
+    @logpasses = params[:logpasses]
     @path = params[:path]
     @dates = params[:dates] or nil
   end
@@ -156,7 +158,8 @@ class FtpRunner
   def run
     Net::FTP.open(@host) do |ftp|
       ftp.passive = true
-      ftp.login(@user, @pass)
+      login, password = get_logpass
+      ftp.login(login, password)
       ftp.chdir(@path)
       all_files = get_dir_files(ftp, '.')
       all_files.each do |path, name|
@@ -216,6 +219,15 @@ class FtpRunner
     false
   rescue
     true
+  end
+
+  # Определяет логин и пароль в зависимости от обрабатываемой директории
+  def get_logpass
+    @logpasses.each do |params|
+      if @path =~ params[:prefix]
+        return [params[:user], params[:pass]]
+      end
+    end
   end
 end
 
@@ -303,7 +315,7 @@ Telegram::Bot::Client.run(tg_token) do |bot|
           # Начинаем обработку.
           runner = XmlRunner.new({
             host: $config[:host],
-            user: $config[:user],
+            logpasses: $config[:logpasses],
             pass: $config[:pass],
             path: data[:path_or_name],
             dates: data[:dates],
