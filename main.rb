@@ -4,6 +4,25 @@ require 'date'
 require 'net/ftp'
 require 'rubygems'
 require 'zip'
+require 'telegram/bot'
+require 'stringio'
+
+
+# Настройки
+$config = {
+  host: 'ftp.zakupki.gov.ru',
+  user: 'free',
+  pass: 'free',
+
+  max_messages_limit: 100,
+
+  tg_token: 'SECRET',
+}
+
+
+# Глобальный стейт диалогов.
+# ... ну а куда еще...
+$dialogs = {}
 
 
 # Диалог. Позволяет хранить состояние диалога с пользователем.
@@ -177,13 +196,16 @@ class FtpRunner
   def actual_zip_date?(zip_name)
 
     def dates_overlaps?(x, y)
-      (x.begin - y.end) * (y.begin - x.end) >= 0
+      y[0] = Date.parse('0001-01-01') if y[0].nil?
+      y[1] = Date.parse('2999-12-01') if y[1].nil?
+
+      (x[0] - y[1]) * (y[0] - x[1]) >= 0
     end
 
     if zip_name =~ /(20\d{6})\d\d_(20\d{6})\d\d_\d+\.xml\.zip/
       file_from = Date.parse($1)
       file_to = Date.parse($2)
-      dates_overlaps?(file_from..file_to, @dates)
+      dates_overlaps?([file_from, file_to], @dates)
     else
       false
     end
@@ -232,24 +254,77 @@ class XmlRunner
     upcase_patterns = @queries.map(&:upcase)
     upcase_patterns.any? { |x| upcase_content.include?(x) }
   end
-
 end
 
 
+Telegram::Bot::Client.run($config[:tg_token]) do |bot|
+  bot.listen do |message|
+    case message.text
+    when '/start'
+      dialog = Dialog.new
+      $dialogs[message.chat.id] = dialog
+      reply = dialog.receive(message.text)
+      bot.api.send_message(chat_id: message.chat.id, text: reply)
 
-runner = XmlRunner.new({
-  host: 'ftp.zakupki.gov.ru',
-  user: 'free',
-  pass: 'free',
-  path: '/fcs_regions/Tatarstan_Resp/purchaseplans/',
-  dates: Date.parse('2017-06-01')..Date.parse('2018-01-01'),
-}, [
-  'customer'
-])
+    when '/about'
+      bot.api.send_message(
+        chat_id: message.chat.id,
+        text: "TODO"
+      )
 
-runner.run do |zip_name, xml_name, data|
-  puts zip_name
-  puts "\t" + xml_name
-  puts "\tBegins with: #{data[0..60].gsub('\n', '')}..."
+    else
+      dialog = $dialogs[message.chat.id]
+      if dialog.nil?
+        bot.api.send_message(
+          chat_id: message.chat.id,
+          text: "Используй /start чтобы начать."
+        )
+      else
+        reply = dialog.receive(message.text)
+        if dialog.complete?
+          data = dialog.data
+          msg = %Q$
+            Ищем здесь: #{data[:path_or_name]},
+            за #{data[:dates][0] or '*'} - #{data[:dates][1] or '*'},
+            подстроки: #{data[:queries].join ' / '}...
+          $.gsub(/\s+/, " ").strip
+          bot.api.send_message(chat_id: message.chat.id, text: msg)
+
+          $dialogs[message.chat.id] = nil
+
+          # Начинаем обработку.
+          runner = XmlRunner.new({
+            host: $config[:host],
+            user: $config[:user],
+            pass: $config[:pass],
+            path: data[:path_or_name],
+            dates: data[:dates],
+          }, data[:queries])
+
+          max_messages_limit = $config[:max_messages_limit]
+
+          runner.run do |zip_name, xml_name, data|
+            if max_messages_limit > 0
+              bot.api.send_message(
+                chat_id: message.chat.id,
+                text: "ftp://#{$config[:host]}#{zip_name}\n#{xml_name}"
+              )
+              bot.api.send_document(
+                chat_id: message.chat.id,
+                document:
+                  Faraday::UploadIO.new(StringIO.new(data), 'text/xml'),
+                disable_notification: true,
+              )
+
+              max_messages_limit -= 1
+            end
+          end
+
+          bot.api.send_message(chat_id: message.chat.id, text: 'Все.')
+        else
+          bot.api.send_message(chat_id: message.chat.id, text: reply)
+        end
+      end
+    end
+  end
 end
-
