@@ -6,6 +6,8 @@ require 'rubygems'
 require 'zip'
 require 'telegram/bot'
 require 'stringio'
+require 'yaml/store'
+require 'securerandom'
 
 
 # Настройки
@@ -18,6 +20,8 @@ $config = {
   }],
 
   max_messages_limit: 100,
+  cache_path: '/tmp/cache',
+  cache_size: 10,
 }
 
 
@@ -145,6 +149,55 @@ class Dialog
 end
 
 
+# Простой дисковый LRU кэш.
+# Общий принцип действия: есть hash-таблица, ключи в которой - имена
+# (пути) кешируемых файлов, а ключи - время добавления и имя файла на
+# диске.
+class DiskCacher
+  def initialize(path, max_items)
+    @path = path
+    @max_items = max_items
+
+    # Индексный файл. Нужен чтобы не проебывать индекс кеша после рестарта.
+    @index = YAML::Store.new(File.join(@path, 'index.dat'))
+  end
+
+  # Сохраняет файл в кеше.
+  def store(name, content)
+    fname = SecureRandom.hex
+    File.write(File.join(@path, fname), content)
+
+    @index.transaction do
+      @index[:data] ||= {}
+      @index[:data][name] = [Time.now.to_f, fname]
+
+      if @index[:data].length > @max_items
+        del_name, del_data = @index[:data].min_by { |k, v| v[0] }
+        _, del_fname = del_data
+        @index[:data].delete(del_name)
+        full_path = File.join(@path, del_fname)
+        File.delete(full_path) if File.exists?(full_path)
+      end
+    end
+  end
+
+  # Вытаскивает файл из кеша. Или возвращает nil.
+  def load(name)
+    content = nil
+    @index.transaction do
+      @index[:data] ||= {}
+      data = @index[:data][name]
+      if data
+        _, fname = data
+        full_path = File.join(@path, fname)
+        content = File.read(full_path) if File.exists?(full_path)
+      end
+    end
+    content
+  end
+end
+
+
 # Бегает по FTP-серверу ЕИС, yield'ит зипы
 class FtpRunner
 
@@ -153,6 +206,8 @@ class FtpRunner
     @logpasses = params[:logpasses]
     @path = params[:path]
     @dates = params[:dates] or nil
+
+    @files_cache = DiskCacher.new($config[:cache_path], $config[:cache_size])
   end
 
   def run
@@ -165,7 +220,7 @@ class FtpRunner
       all_files.each do |path, name|
         if not @dates or actual_zip_date?(name)
           full_path = "#{path}/#{name}"
-          zip_content = ftp.getbinaryfile(full_path, nil)
+          zip_content = get_binary_file(ftp, full_path)
           yield(full_path, zip_content)
         end
       end
@@ -228,6 +283,16 @@ class FtpRunner
         return [params[:user], params[:pass]]
       end
     end
+  end
+
+  # Скачивает файл с FTP или получает из кэша.
+  def get_binary_file(ftp, path)
+    cache_file = @files_cache.load(path)
+    if cache_file.nil?
+      cache_file = ftp.getbinaryfile(path, nil)
+      @files_cache.store(path, cache_file)
+    end
+    cache_file
   end
 end
 
