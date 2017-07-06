@@ -397,7 +397,7 @@ Telegram::Bot::Client.run(tg_token) do |bot|
               bot.api.send_document(
                 chat_id: message.chat.id,
                 document:
-                  Faraday::UploadIO.new(StringIO.new(data), 'text/xml'),
+                  Faraday::UploadIO.new(StringIO.new(data), 'text/xml', xml_name),
                 disable_notification: true,
               )
 
