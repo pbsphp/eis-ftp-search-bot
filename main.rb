@@ -103,7 +103,7 @@ class Dialog
   # Парсит - где искать данные.
   def path_name_parser(data)
     case data
-    when /пз|планы.?закупок/i
+    when /пз|планы?.?закупок/i
       '/fcs_regions/Tatarstan_Resp/purchaseplans/'
     when /пг|план.?график|планы.?графики/i
       '/fcs_regions/Tatarstan_Resp/plangraphs2017/'
