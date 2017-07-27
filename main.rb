@@ -10,22 +10,13 @@ require_relative 'dialog'
 require_relative 'cache'
 require_relative 'runners'
 
-
-# Настройки
-$config = {
-  host: 'ftp.zakupki.gov.ru',
-
-  # Логины/пароли разные для разных директорий.
-  logpasses: [{
-    prefix: /^\/out\//, user: 'fz223free', pass: 'fz223free',
-  }, {
-    prefix: /.*/, user: 'free', pass: 'free',
-  }],
-
-  max_messages_limit: 100,
-  cache_path: '/tmp',
-  cache_size: 10,
-}
+# Загружаем настройки из файла setings.rb если есть. Если нет, то
+# из дефолтного.
+begin
+  require_relative 'settings.rb'
+rescue LoadError
+  require_relative 'settings.default.rb'
+end
 
 
 # Отключить предупреждения о кривых датах.
@@ -79,21 +70,20 @@ Telegram::Bot::Client.run(tg_token) do |bot|
 
           # Начинаем обработку.
           runner = XmlRunner.new({
-            host: $config[:host],
-            logpasses: $config[:logpasses],
-            pass: $config[:pass],
+            host: Settings::HOST,
+            logpasses: Settings::LOGPASSES,
             path: data[:path_or_name],
             dates: data[:dates],
-            cache: DiskCacher.new($config[:cache_path], $config[:cache_size]),
+            cache: DiskCacher.new(Settings::CACHE_PATH, Settings::CACHE_SIZE),
           }, data[:queries])
 
-          max_messages_limit = $config[:max_messages_limit]
+          max_messages_limit = Settings::MAX_MESSAGES_LIMIT
 
           runner.run do |zip_name, xml_name, data|
             if max_messages_limit > 0
               bot.api.send_message(
                 chat_id: message.chat.id,
-                text: "ftp://#{$config[:host]}#{zip_name}\n#{xml_name}"
+                text: "ftp://#{Settings::HOST}#{zip_name}\n#{xml_name}"
               )
               bot.api.send_document(
                 chat_id: message.chat.id,
