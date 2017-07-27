@@ -4,6 +4,7 @@ require 'date'
 require 'rubygems'
 require 'telegram/bot'
 require 'stringio'
+require 'zip'
 
 require_relative 'dialog'
 require_relative 'cache'
@@ -25,6 +26,10 @@ $config = {
   cache_path: '/tmp',
   cache_size: 10,
 }
+
+
+# Отключить предупреждения о кривых датах.
+Zip.warn_invalid_date = false
 
 
 token_path = File.join(File.dirname(__FILE__), '.token')
