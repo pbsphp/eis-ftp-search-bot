@@ -13,7 +13,7 @@ class DiskCacher
     @max_items = max_items
 
     # Индексный файл. Нужен чтобы не проебывать индекс кеша после рестарта.
-    @index = YAML::Store.new(File.join(@path, 'index.yaml'))
+    @index = YAML::Store.new(File.join(@path, 'pbs_disk_cacher_index.yaml'))
   end
 
   # Сохраняет файл в кеше.

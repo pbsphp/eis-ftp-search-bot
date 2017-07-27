@@ -22,7 +22,7 @@ $config = {
   }],
 
   max_messages_limit: 100,
-  cache_path: '/tmp/cache',
+  cache_path: '/tmp',
   cache_size: 10,
 }
 
